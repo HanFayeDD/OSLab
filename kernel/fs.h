@@ -54,7 +54,7 @@ struct dinode {
 #define DIRSIZ 14
 
 struct dirent {
-  ushort inum;
+  ushort inum;//这个条目对应的文件或子目录的 inode 编号
   char name[DIRSIZ];
 };
 
