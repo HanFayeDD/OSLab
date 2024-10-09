@@ -2,7 +2,7 @@
 #include "kernel/stat.h"
 #include "user/user.h"
 #include "kernel/fs.h"
-
+#define LONGPATH (200+DIRSIZ+3)
 /**
  * @path:对应路径
  */
@@ -10,8 +10,9 @@ void search(char *path, char *target) {
   // printf("查找%s\n", path);
   if(strlen(path)>200){
     fprintf(2, "find: path(%s) too long\n", path);
+    return;
   }
-  char buf[200], *p;
+  char buf[LONGPATH], *p;
   int fd;
   struct dirent de;
   struct stat st;
@@ -66,7 +67,7 @@ void search(char *path, char *target) {
       if (strcmp(de.name, target) == 0) {
         printf("%s\n", buf);
       }
-      char newfolder[200];
+      char newfolder[LONGPATH];
       strcpy(newfolder, buf);
       // printf("进入%s\n", newfolder);
       // printf("长度%d\n", strlen(newfolder));
