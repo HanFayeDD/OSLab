@@ -269,15 +269,21 @@ int fork(void) {
 
 // Pass p's abandoned children to init.
 // Caller must hold p->lock.
-char* getProcStateName(enum procstate state) {
-    switch (state) {
-        case UNUSED: return "unused";
-        case SLEEPING: return "sleep";
-        case RUNNABLE: return "runnable";
-        case RUNNING: return "running";
-        case ZOMBIE: return "zombir";
-        default: return "unknown";
-    }
+char *getProcStateName(enum procstate state) {
+  switch (state) {
+    case UNUSED:
+      return "unused";
+    case SLEEPING:
+      return "sleep";
+    case RUNNABLE:
+      return "runnable";
+    case RUNNING:
+      return "running";
+    case ZOMBIE:
+      return "zombir";
+    default:
+      return "unknown";
+  }
 }
 
 void reparent(struct proc *p) {
@@ -292,17 +298,17 @@ void reparent(struct proc *p) {
       // pp->parent can't change between the check and the acquire()
       // because only the parent changes it, and we're the parent.
       acquire(&pp->lock);
-      //打印调用exit进程的子进程消息
-      exit_info("proc %d exit, child_num %d, pid %d, name %s, state %s\n", 
-                p->pid, cnt, pp->pid, pp->name, getProcStateName(pp->state));
-      
+      // 打印调用exit进程的子进程消息
+      exit_info("proc %d exit, child_num %d, pid %d, name %s, state %s\n", p->pid, cnt, pp->pid, pp->name,
+                getProcStateName(pp->state));
+
       pp->parent = initproc;
       // we should wake up init here, but that would require
       // initproc->lock, which would be a deadlock, since we hold
       // the lock on one of init's children (pp). this is why
       // exit() always wakes init (before acquiring any locks).
       release(&pp->lock);
-      cnt ++;
+      cnt++;
     }
   }
 }
@@ -354,9 +360,9 @@ void exit(int status) {
 
   acquire(&p->lock);
 
-  //当前进程的父进程信息
-  exit_info("proc %d exit, parent pid %d, name %s, state %s\n",
-              p->pid, p->parent->pid, p->name, getProcStateName(p->state));
+  // 当前进程的父进程信息
+  exit_info("proc %d exit, parent pid %d, name %s, state %s\n", p->pid, p->parent->pid, p->name,
+            getProcStateName(p->state));
   // Give any children to init.
   reparent(p);
 
@@ -375,7 +381,8 @@ void exit(int status) {
 
 // Wait for a child process to exit and return its pid.
 // Return -1 if this process has no children.
-int wait(uint64 addr) {
+// TODO:task2阻塞与非阻塞的wait
+int wait(uint64 addr, int flag) {
   struct proc *np;
   int havekids, pid;
   struct proc *p = myproc();
@@ -383,6 +390,12 @@ int wait(uint64 addr) {
   // hold p->lock for the whole time to avoid lost
   // wakeups from a child's exit().
   acquire(&p->lock);
+
+  if (flag) {
+    printf("flag==1");
+    release(&p->lock);
+    return -1;
+  }
 
   for (;;) {
     // Scan through table looking for exited children.
@@ -421,6 +434,11 @@ int wait(uint64 addr) {
 
     // Wait for a child to exit.
     sleep(p, &p->lock);  // DOC: wait-sleep
+    // if(flag==1){
+    //   return -1;
+    // }else{
+    //   sleep(p, &p->lock);
+    // }
   }
 }
 

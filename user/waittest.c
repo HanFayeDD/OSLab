@@ -31,5 +31,6 @@ void waittest(void) {
 
 int main(int argc, char *argv[]) {
   waittest();
+  // printf("%d", wait(0, 23));
   exit(0);
 }
