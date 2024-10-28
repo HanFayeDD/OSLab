@@ -276,11 +276,11 @@ char *getProcStateName(enum procstate state) {
     case SLEEPING:
       return "sleep";
     case RUNNABLE:
-      return "runnable";
+      return "runble";
     case RUNNING:
-      return "running";
+      return "run";
     case ZOMBIE:
-      return "zombir";
+      return "zombie";
     default:
       return "unknown";
   }
@@ -299,7 +299,7 @@ void reparent(struct proc *p) {
       // because only the parent changes it, and we're the parent.
       acquire(&pp->lock);
       // 打印调用exit进程的子进程消息
-      exit_info("proc %d exit, child_num %d, pid %d, name %s, state %s\n", p->pid, cnt, pp->pid, pp->name,
+      exit_info("proc %d exit, child %d, pid %d, name %s, state %s\n", p->pid, cnt, pp->pid, pp->name,
                 getProcStateName(pp->state));
 
       pp->parent = initproc;
@@ -361,7 +361,7 @@ void exit(int status) {
   acquire(&p->lock);
 
   // 当前进程的父进程信息
-  exit_info("proc %d exit, parent pid %d, name %s, state %s\n", p->pid, p->parent->pid, p->name,
+  exit_info("proc %d exit, parent pid %d, name %s, state %s\n", p->pid, p->parent->pid, p->parent->name,
             getProcStateName(p->state));
   // Give any children to init.
   reparent(p);
@@ -392,7 +392,7 @@ int wait(uint64 addr, int flag) {
   acquire(&p->lock);
 
   if (flag) {
-    printf("flag==1");
+    // printf("flag==1");
     release(&p->lock);
     return -1;
   }
