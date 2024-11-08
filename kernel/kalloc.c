@@ -14,28 +14,38 @@ void freerange(void *pa_start, void *pa_end);
 extern char end[]; // first address after kernel.
                    // defined by kernel.ld.
 
-struct run {
+struct run
+{
   struct run *next;
 };
 
-struct {
-  struct spinlock lock;
-  struct run *freelist;
-} kmem;
-
-void
-kinit()
+// 在使用kalloc()获取内存时，由于添加了内存锁kmem.lock，
+// 其他CPU如果要切换进行内存申请必须等待当前进程释放内存锁
+struct kmem
 {
-  initlock(&kmem.lock, "kmem");
-  freerange(end, (void*)PHYSTOP);
+  struct spinlock lock;
+  struct run *freelist; // 空闲物理内存页组成的链表每个页帧4KB
+};
+
+struct kmem kmems[NCPU];
+
+void kinit()
+{
+  // char kmems_name[8][20];
+  // for循环依次初始化八个cpu对应的kmen数据结构
+  for (int i = 0; i < NCPU; i++)
+  {
+    // snprintf(kmems_name[i], sizeof(kmems_name[0]), "kmems_%d", i);
+    initlock(&kmems[i].lock, "kmem");
+  }
+  freerange(end, (void *)PHYSTOP);
 }
 
-void
-freerange(void *pa_start, void *pa_end)
+void freerange(void *pa_start, void *pa_end)
 {
   char *p;
-  p = (char*)PGROUNDUP((uint64)pa_start);
-  for(; p + PGSIZE <= (char*)pa_end; p += PGSIZE)
+  p = (char *)PGROUNDUP((uint64)pa_start);
+  for (; p + PGSIZE <= (char *)pa_end; p += PGSIZE)
     kfree(p);
 }
 
@@ -43,23 +53,24 @@ freerange(void *pa_start, void *pa_end)
 // which normally should have been returned by a
 // call to kalloc().  (The exception is when
 // initializing the allocator; see kinit above.)
-void
-kfree(void *pa)
+void kfree(void *pa)
 {
   struct run *r;
-
-  if(((uint64)pa % PGSIZE) != 0 || (char*)pa < end || (uint64)pa >= PHYSTOP)
+  push_off();
+  int i = cpuid();
+  pop_off();
+  if (((uint64)pa % PGSIZE) != 0 || (char *)pa < end || (uint64)pa >= PHYSTOP)
     panic("kfree");
 
   // Fill with junk to catch dangling refs.
   memset(pa, 1, PGSIZE);
 
-  r = (struct run*)pa;
+  r = (struct run *)pa;
 
-  acquire(&kmem.lock);
-  r->next = kmem.freelist;
-  kmem.freelist = r;
-  release(&kmem.lock);
+  acquire(&kmems[i].lock);
+  r->next = kmems[i].freelist; // 链表采用头插方法
+  kmems[i].freelist = r;
+  release(&kmems[i].lock);
 }
 
 // Allocate one 4096-byte page of physical memory.
@@ -69,14 +80,54 @@ void *
 kalloc(void)
 {
   struct run *r;
+  struct run *temp;
 
-  acquire(&kmem.lock);
-  r = kmem.freelist;
-  if(r)
-    kmem.freelist = r->next;
-  release(&kmem.lock);
+  push_off();
+  int i = cpuid();
+  pop_off();
+  acquire(&kmems[i].lock);
+  r = kmems[i].freelist;
+  if (r){//在自己里找到
+    kmems[i].freelist = r->next;
+    memset((char *)r, 5, PGSIZE);
+    release(&kmems[i].lock);
+    return (void *)r;
+  }
 
-  if(r)
-    memset((char*)r, 5, PGSIZE); // fill with junk
-  return (void*)r;
+  release(&kmems[i].lock);
+
+
+  //没找到
+  for (int j = 0; j < NCPU; j++)
+  {
+    if (j == i)
+    { // 自己本来就没用
+      continue;
+    }
+    acquire(&kmems[j].lock);
+    temp = kmems[j].freelist;
+    if (!temp)
+    { // j也没用T T
+      release(&kmems[j].lock);
+      continue;
+    }
+    else
+    { // j有用
+      kmems[j].freelist = temp->next;
+      r = temp;
+      release(&kmems[j].lock);
+      break;
+    }
+  }
+ 
+
+  if (r)
+  {
+    memset((char *)r, 5, PGSIZE);
+    return (void *)r;
+  }
+  else
+  {
+    return 0;
+  }
 }
