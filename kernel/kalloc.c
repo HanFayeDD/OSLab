@@ -57,12 +57,13 @@ void kfreeinit(void *pa, int i)
 void freerange(void *pa_start, void *pa_end)
 {
   char *p;
-  int i = 0;
+  // int i = 0;
   p = (char *)PGROUNDUP((uint64)pa_start);
   for (; p + PGSIZE <= (char *)pa_end; p += PGSIZE)
   {
-    kfreeinit(p, i);
-    i = (i + 1) % NCPU;
+    // kfreeinit(p, i);
+    // i = (i + 1) % NCPU;
+    kfree(p);
   }
 }
 

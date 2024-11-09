@@ -165,6 +165,14 @@ bget(uint dev, uint blockno)
         b->blockno = blockno;
         b->valid = 0;
         b->refcnt = 1;
+        //将b从原有哈希桶中删除
+        b->next->prev = b->prev;
+        b->prev->next = b->next;
+        //将b插入该哈希桶中
+        b->next = bcache.hashbucket[hashnum].next;
+        b->prev = &bcache.hashbucket[hashnum];
+        bcache.hashbucket[hashnum].next->prev = b;
+        bcache.hashbucket[hashnum].next = b;
         release(&bcache.lock[i]);
         release(&bcache.lock[hashnum]);
         release(&bcache.gloablock);
