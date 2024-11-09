@@ -41,13 +41,31 @@ void kinit()
   freerange(end, (void *)PHYSTOP);
 }
 
+void kfreeinit(void *pa, int i)
+{
+  struct run *r;
+  if (((uint64)pa % PGSIZE) != 0 || (char *)pa < end || (uint64)pa >= PHYSTOP)
+    panic("kfree");
+  memset(pa, 1, PGSIZE);
+  r = (struct run *)pa;
+  acquire(&kmems[i].lock);
+  r->next = kmems[i].freelist; // 链表采用头插方法
+  kmems[i].freelist = r;
+  release(&kmems[i].lock);
+}
+
 void freerange(void *pa_start, void *pa_end)
 {
   char *p;
+  int i = 0;
   p = (char *)PGROUNDUP((uint64)pa_start);
   for (; p + PGSIZE <= (char *)pa_end; p += PGSIZE)
-    kfree(p);
+  {
+    kfreeinit(p, i);
+    i = (i + 1) % NCPU;
+  }
 }
+
 
 // Free the page of physical memory pointed at by v,
 // which normally should have been returned by a
@@ -87,7 +105,8 @@ kalloc(void)
   pop_off();
   acquire(&kmems[i].lock);
   r = kmems[i].freelist;
-  if (r){//在自己里找到
+  if (r)
+  { // 在自己里找到
     kmems[i].freelist = r->next;
     memset((char *)r, 5, PGSIZE);
     release(&kmems[i].lock);
@@ -96,8 +115,7 @@ kalloc(void)
 
   release(&kmems[i].lock);
 
-
-  //没找到
+  // 没找到
   for (int j = 0; j < NCPU; j++)
   {
     if (j == i)
@@ -119,7 +137,6 @@ kalloc(void)
       break;
     }
   }
- 
 
   if (r)
   {
