@@ -109,8 +109,9 @@ kalloc(void)
   if (r)
   { // 在自己里找到
     kmems[i].freelist = r->next;
-    memset((char *)r, 5, PGSIZE);
+    // memset((char *)r, 5, PGSIZE);
     release(&kmems[i].lock);
+    memset((char *)r, 5, PGSIZE);
     return (void *)r;
   }
 
@@ -135,17 +136,11 @@ kalloc(void)
       kmems[j].freelist = temp->next;
       r = temp;
       release(&kmems[j].lock);
+      memset((char *)r, 5, PGSIZE);
       break;
     }
   }
+  
+  return (void *)r;
 
-  if (r)
-  {
-    memset((char *)r, 5, PGSIZE);
-    return (void *)r;
-  }
-  else
-  {
-    return 0;
-  }
 }
