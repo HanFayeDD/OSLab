@@ -246,7 +246,6 @@ void freewalk(pagetable_t pagetable) {
 void getflags(uint64 addr, char* res) {
   // 输出顺序rwxu
   // addr位置UXWR
-  printf("last five %d\n", addr);
   for (int i = 0; i < 4; i++) {
     res[i] = '-';  // 默认所有标志为'-'
   }
@@ -274,6 +273,13 @@ void getflags(uint64 addr, char* res) {
  * tips2:使用printf() 打印页表数据中的指针时，你可以直接使用 %p 标示
  */
 int floor = 0;
+uint64 l0 = 0;
+uint64 l1 = 0;
+uint64 l2 = 0;
+uint64 offsetva = 0;
+#define GEN_VA (l2<<30)+(l1<<21)+(l0<<12)+(offsetva)
+
+
 void vmprint(pagetable_t pgtbl) {
   floor++;
   if (floor == 1) {
@@ -285,19 +291,22 @@ void vmprint(pagetable_t pgtbl) {
       uint64 child = PTE2PA(pte);
       if (floor == 1) {
         printf("||idx: %d: pa: %p, flags: ----\n", i, child);
+        l2 = i;
         vmprint((pagetable_t)child);
       } else if (floor == 2) {
         printf("||   ||idx: %d: pa: %p, flags: ----\n", i, child);
+        l1 = i;
         vmprint((pagetable_t)child);
       } else {
         panic("error in vmprintf1");
       }
     } else if ((pte & PTE_V) && (pte & (PTE_R | PTE_W | PTE_X)) != 0) {  // 第三级页表
       if (floor == 3) {
-        uint64 child = PTE2PA(pte);
+        uint64 pa = PTE2PA(pte);
+        l0 = i;
         char temp[5];
-        getflags(child, temp);
-        printf("||   ||   ||idx: %d: va: %p -> pa: %p, flags: %s\n", i, pgtbl + i * (1 << 9), child, temp);  //??为什么是移动9位
+        getflags(pte, temp);
+        printf("||   ||   ||idx: %d: va: %p -> pa: %p, flags: %s\n", i, GEN_VA, pa, temp);  
       }
     }
   }
