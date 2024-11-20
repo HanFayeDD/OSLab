@@ -97,6 +97,11 @@ int exec(char *path, char **argv) {
   p->trapframe->sp = sp;          // initial stack pointer
   proc_freepagetable(oldpagetable, oldsz);
 
+  //掺入打印页表函数、
+  if(p->pid==1){
+    vmprint(p->pagetable);
+  }
+
   return argc;  // this ends up in a0, the first argument to main(argc, argv)
 
 bad:

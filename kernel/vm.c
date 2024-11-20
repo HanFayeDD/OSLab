@@ -243,6 +243,67 @@ void freewalk(pagetable_t pagetable) {
   kfree((void *)pagetable);
 }
 
+void getflags(uint64 addr, char* res) {
+  // 输出顺序rwxu
+  // addr位置UXWR
+  printf("last five %d\n", addr);
+  for (int i = 0; i < 4; i++) {
+    res[i] = '-';  // 默认所有标志为'-'
+  }
+  res[4] = '\0';  // 添加字符串结束符
+  for (int i = 1; i < 5; i++) {
+    if (((addr >> i) & 1) != 0) {
+      if (i == 1) {
+        res[i - 1] = 'r';
+      } else if (i == 2) {
+        res[i - 1] = 'w';
+      } else if (i == 3) {
+        res[i - 1] = 'x';
+      } else if (i == 4) {
+        res[i - 1] = 'u';
+      } else {
+        panic("error in getflags");
+      }
+    }
+  }
+}
+
+/**
+ * 打印页表
+ * tips1:由于xv6不支持%c, 因此打印字符的时候请通过将字符转化为字符串的方式，使用%s格式化字符串 。
+ * tips2:使用printf() 打印页表数据中的指针时，你可以直接使用 %p 标示
+ */
+int floor = 0;
+void vmprint(pagetable_t pgtbl) {
+  floor++;
+  if (floor == 1) {
+    printf("page table %p\n", pgtbl);
+  }
+  for (int i = 0; i < 512; i++) {
+    pte_t pte = pgtbl[i];
+    if ((pte & PTE_V) && (pte & (PTE_R | PTE_W | PTE_X)) == 0) {  // 非第三级页表，还可以遍历
+      uint64 child = PTE2PA(pte);
+      if (floor == 1) {
+        printf("||idx: %d: pa: %p, flags: ----\n", i, child);
+        vmprint((pagetable_t)child);
+      } else if (floor == 2) {
+        printf("||   ||idx: %d: pa: %p, flags: ----\n", i, child);
+        vmprint((pagetable_t)child);
+      } else {
+        panic("error in vmprintf1");
+      }
+    } else if ((pte & PTE_V) && (pte & (PTE_R | PTE_W | PTE_X)) != 0) {  // 第三级页表
+      if (floor == 3) {
+        uint64 child = PTE2PA(pte);
+        char temp[5];
+        getflags(child, temp);
+        printf("||   ||   ||idx: %d: va: %p -> pa: %p, flags: %s\n", i, pgtbl + i * (1 << 9), child, temp);  //??为什么是移动9位
+      }
+    }
+  }
+  floor--;
+}
+
 // Free user memory pages,
 // then free page-table pages.
 void uvmfree(pagetable_t pagetable, uint64 sz) {
