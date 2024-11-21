@@ -31,6 +31,7 @@ int exec(char *path, char **argv) {
   if (readi(ip, 0, (uint64)&elf, 0, sizeof(elf)) != sizeof(elf)) goto bad;
   if (elf.magic != ELF_MAGIC) goto bad;
 
+  //分配TRAMPOLINE和TRAPFRAME的页表映射
   if ((pagetable = proc_pagetable(p)) == 0) goto bad;
 
   // Load program into memory.

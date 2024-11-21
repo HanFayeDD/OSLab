@@ -8,6 +8,7 @@
 
 /*
  * the kernel's page table.
+ * 内核只有一个页表，即共享页表时的页表的地址
  */
 pagetable_t kernel_pagetable;
 
@@ -17,6 +18,9 @@ extern char trampoline[];  // trampoline.S
 
 /*
  * create a direct-map page table for the kernel.
+ *通过kalloc函数申请全局内核页表并初始化
+ *task2
+ *kvmap中采取的是恒等映射 
  */
 void kvminit() {
   kernel_pagetable = (pagetable_t)kalloc();
@@ -45,8 +49,39 @@ void kvminit() {
   kvmmap(TRAMPOLINE, (uint64)trampoline, PGSIZE, PTE_R | PTE_X);
 }
 
+
+/*
+*step2 往产生的内核页表添加一个mapping
+*/
+void kvmmap_kpgtbl(pagetable_t pgtbl, uint64 va, uint64 pa, uint64 sz, int perm){
+  if (mappages(pgtbl, va, sz, pa, perm)!=0) panic("kvmmap_kpgtbl error");
+}
+
+/*
+*step2 仿照kvminit() 函数重新写一个创建内核页表的函数
+*/
+pagetable_t kvminit_kpgtbl(){
+  pagetable_t new_kpgtbl = (pagetable_t)kalloc();
+  memset(new_kpgtbl, 0, PGSIZE);
+
+  kvmmap_kpgtbl(new_kpgtbl, UART0, UART0, PGSIZE, PTE_R | PTE_W);
+  kvmmap_kpgtbl(new_kpgtbl, VIRTIO0, VIRTIO0, PGSIZE, PTE_R | PTE_W);
+  kvmmap_kpgtbl(new_kpgtbl, PLIC, PLIC, 0X400000, PTE_R | PTE_W);
+  //text部分可读可执行
+  kvmmap_kpgtbl(new_kpgtbl, KERNBASE, KERNBASE, (uint64)etext-KERNBASE, PTE_R | PTE_X);
+  //data部分可读可写
+  kvmmap_kpgtbl(new_kpgtbl, (uint64)etext, (uint64)etext, PHYSTOP - (uint64)etext, PTE_R | PTE_W);
+  //trampoline
+  kvmmap_kpgtbl(new_kpgtbl, TRAMPOLINE, (uint64)trampoline, PGSIZE, PTE_R | PTE_X);
+  return new_kpgtbl;
+}
+
+
 // Switch h/w page table register to the kernel's page table,
 // and enable paging.
+//对内核全局页表进行启用
+//task2设置satp寄存器
+//该函数过后使用的地址都是虚拟地址，由硬件MMU完成翻译
 void kvminithart() {
   w_satp(MAKE_SATP(kernel_pagetable));
   sfence_vma();

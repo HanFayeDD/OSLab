@@ -33,6 +33,7 @@ void procinit(void) {
     // Map it high in memory, followed by an invalid
     // guard page.
     char *pa = kalloc();
+    p->kstack_pa = pa;
     if (pa == 0) panic("kalloc");
     uint64 va = KSTACK((int)(p - proc));
     kvmmap(va, (uint64)pa, PGSIZE, PTE_R | PTE_W);
@@ -117,6 +118,14 @@ found:
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
 
+  //设置内核页表
+  p->k_pagetable = kvminit_kpgtbl();
+  //将内核栈映射到内核页表中
+  if(p->kstack_pa==0){
+    panic("allocproc error");
+  }
+  uint64 va = KSTACK((int )(p - proc));
+  kvmmap_kpgtbl(p->k_pagetable, va, p->kstack_pa, PGSIZE,  PTE_R | PTE_W);
   return p;
 }
 
@@ -182,14 +191,16 @@ uchar initcode[] = {0x17, 0x05, 0x00, 0x00, 0x13, 0x05, 0x45, 0x02, 0x97, 0x05, 
                     0x69, 0x74, 0x00, 0x00, 0x24, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
 
 // Set up first user process.
+//task2初始化第一个进程的创建
 void userinit(void) {
   struct proc *p;
 
-  p = allocproc();
+  p = allocproc();//请和填写进程的PCB
   initproc = p;
 
   // allocate one user page and copy init's instructions
   // and data into it.
+  //uvminit完成用户页表的初始化
   uvminit(p->pagetable, initcode, sizeof(initcode));
   p->sz = PGSIZE;
 
@@ -412,6 +423,7 @@ int wait(uint64 addr) {
 //  - swtch to start running that process.
 //  - eventually that process transfers control
 //    via swtch back to the scheduler.
+//进程切换
 void scheduler(void) {
   struct proc *p;
   struct cpu *c = mycpu();
