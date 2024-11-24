@@ -33,7 +33,7 @@ void procinit(void) {
     // Map it high in memory, followed by an invalid
     // guard page.
     char *pa = kalloc();
-    p->kstack_pa = pa;
+    p->kstack_pa = (uint64)pa;//pa本身是一个指针
     if (pa == 0) panic("kalloc");
     uint64 va = KSTACK((int)(p - proc));
     kvmmap(va, (uint64)pa, PGSIZE, PTE_R | PTE_W);
@@ -129,14 +129,33 @@ found:
   return p;
 }
 
+// 释放页表但不释放叶子页表指向的物理页帧
+void proc_free_kernal_pgt(pagetable_t pagetable, int floor){
+  for(int i=1; i<512; i++){
+    pte_t pte = pagetable[i];
+    if(floor < 3){//第三级页表不用递归清空对应的物理页框
+      uint64 child = PTE2PA(pte);
+      proc_free_kernal_pgt((pagetable_t)child, floor++);
+      pagetable[i] = 0;
+    }else{
+      break;
+    }
+  }
+  kfree((void *)pagetable);
+}
+
 // free a proc structure and the data hanging from it,
 // including user pages.
 // p->lock must be held.
 static void freeproc(struct proc *p) {
   if (p->trapframe) kfree((void *)p->trapframe);
   p->trapframe = 0;
+  //释放用户态页表
   if (p->pagetable) proc_freepagetable(p->pagetable, p->sz);
   p->pagetable = 0;
+  //释放内核态页表
+  proc_free_kernal_pgt(p->k_pagetable, 1);
+  p->k_pagetable = 0;
   p->sz = 0;
   p->pid = 0;
   p->parent = 0;
@@ -145,6 +164,7 @@ static void freeproc(struct proc *p) {
   p->killed = 0;
   p->xstate = 0;
   p->state = UNUSED;
+  printf("herher\n");
 }
 
 // Create a user page table for a given process,
@@ -424,10 +444,10 @@ int wait(uint64 addr) {
 //  - eventually that process transfers control
 //    via swtch back to the scheduler.
 //进程切换
+//调度器运行在全局内核页表下
 void scheduler(void) {
   struct proc *p;
   struct cpu *c = mycpu();
-
   c->proc = 0;
   for (;;) {
     // Avoid deadlock by ensuring that devices can interrupt.
@@ -442,19 +462,24 @@ void scheduler(void) {
         // before jumping back to us.
         p->state = RUNNING;
         c->proc = p;
+        //将切换后的页表地址放入satp寄存器中
+        w_satp(MAKE_SATP(p->k_pagetable));
+        sfence_vma();
         swtch(&c->context, &p->context);
-
         // Process is done running for now.
         // It should have changed its p->state before coming back.
+        //换成全局页表
+        kvminithart();
         c->proc = 0;
-
         found = 1;
       }
       release(&p->lock);
     }
 #if !defined(LAB_FS)
     if (found == 0) {
+      //没找到可运行进程时，载入全局内核页表
       intr_on();
+      kvminithart();
       asm volatile("wfi");
     }
 #else
