@@ -122,23 +122,26 @@ found:
   p->k_pagetable = kvminit_kpgtbl();
   //将内核栈映射到内核页表中
   if(p->kstack_pa==0){
-    panic("allocproc error");
+    freeproc(p);
+    release(&p->lock);
+    return 0;
   }
-  uint64 va = KSTACK((int )(p - proc));
-  kvmmap_kpgtbl(p->k_pagetable, va, p->kstack_pa, PGSIZE,  PTE_R | PTE_W);
+
+  kvmmap_kpgtbl(p->k_pagetable, p->kstack, p->kstack_pa, PGSIZE,  PTE_R | PTE_W);
   return p;
 }
 
 // 释放页表但不释放叶子页表指向的物理页帧
-void proc_free_kernal_pgt(pagetable_t pagetable, int floor){
-  for(int i=1; i<512; i++){
+void proc_free_kernal_pgt(pagetable_t pagetable){
+  for(int i=0; i<512; i++){
     pte_t pte = pagetable[i];
-    if(floor < 3){//第三级页表不用递归清空对应的物理页框
+    if((pte & PTE_V) && (pte & (PTE_R | PTE_W | PTE_X)) == 0){
       uint64 child = PTE2PA(pte);
-      proc_free_kernal_pgt((pagetable_t)child, floor++);
+      proc_free_kernal_pgt((pagetable_t)child);
       pagetable[i] = 0;
-    }else{
-      break;
+    }
+    else if(pte & PTE_V){
+      pagetable[i] = 0;
     }
   }
   kfree((void *)pagetable);
@@ -154,7 +157,7 @@ static void freeproc(struct proc *p) {
   if (p->pagetable) proc_freepagetable(p->pagetable, p->sz);
   p->pagetable = 0;
   //释放内核态页表
-  proc_free_kernal_pgt(p->k_pagetable, 1);
+  proc_free_kernal_pgt(p->k_pagetable);
   p->k_pagetable = 0;
   p->sz = 0;
   p->pid = 0;
@@ -164,7 +167,6 @@ static void freeproc(struct proc *p) {
   p->killed = 0;
   p->xstate = 0;
   p->state = UNUSED;
-  printf("herher\n");
 }
 
 // Create a user page table for a given process,
@@ -478,8 +480,8 @@ void scheduler(void) {
 #if !defined(LAB_FS)
     if (found == 0) {
       //没找到可运行进程时，载入全局内核页表
-      intr_on();
       kvminithart();
+      intr_on();
       asm volatile("wfi");
     }
 #else
