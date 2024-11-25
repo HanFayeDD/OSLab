@@ -33,8 +33,8 @@ void procinit(void) {
     // Map it high in memory, followed by an invalid
     // guard page.
     char *pa = kalloc();
-    p->kstack_pa = (uint64)pa;//pa本身是一个指针
     if (pa == 0) panic("kalloc");
+    p->kstack_pa = (uint64)pa;//pa本身是一个指针
     uint64 va = KSTACK((int)(p - proc));
     kvmmap(va, (uint64)pa, PGSIZE, PTE_R | PTE_W);
     p->kstack = va;
@@ -157,7 +157,13 @@ static void freeproc(struct proc *p) {
   if (p->pagetable) proc_freepagetable(p->pagetable, p->sz);
   p->pagetable = 0;
   //释放内核态页表
-  proc_free_kernal_pgt(p->k_pagetable);
+  //释放内核态页表
+  //对于96个二级页表，释放用户页表时候已经释放
+  pagetable_t pa_2tbl = (pagetable_t)PTE2PA(p->k_pagetable[0]);
+  for(int i=0; i<96; i++){
+    pa_2tbl[i] = 0;
+  }
+  if(p->k_pagetable) proc_free_kernal_pgt(p->k_pagetable);
   p->k_pagetable = 0;
   p->sz = 0;
   p->pid = 0;
@@ -235,6 +241,8 @@ void userinit(void) {
 
   p->state = RUNNABLE;
 
+  sync_pagetable(p->pagetable, p->k_pagetable);
+
   release(&p->lock);
 }
 
@@ -253,6 +261,10 @@ int growproc(int n) {
     sz = uvmdealloc(p->pagetable, sz, sz + n);
   }
   p->sz = sz;
+
+  //更新页表
+  sync_pagetable(p->pagetable, p->k_pagetable);
+
   return 0;
 }
 
@@ -294,6 +306,10 @@ int fork(void) {
   pid = np->pid;
 
   np->state = RUNNABLE;
+
+
+  //同步页表
+  sync_pagetable(np->pagetable, np->k_pagetable);
 
   release(&np->lock);
 
