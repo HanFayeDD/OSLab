@@ -34,7 +34,7 @@ void procinit(void) {
     // guard page.
     char *pa = kalloc();
     if (pa == 0) panic("kalloc");
-    p->kstack_pa = (uint64)pa;//pa本身是一个指针
+    p->kstack_pa = (uint64)pa;  // pa本身是一个指针
     uint64 va = KSTACK((int)(p - proc));
     kvmmap(va, (uint64)pa, PGSIZE, PTE_R | PTE_W);
     p->kstack = va;
@@ -118,29 +118,34 @@ found:
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
 
-  //设置内核页表
+  // 设置内核页表
   p->k_pagetable = kvminit_kpgtbl();
-  //将内核栈映射到内核页表中
-  if(p->kstack_pa==0){
+  // 将内核栈映射到内核页表中
+  if (p->kstack_pa == 0) {
     freeproc(p);
     release(&p->lock);
     return 0;
   }
 
-  kvmmap_kpgtbl(p->k_pagetable, p->kstack, p->kstack_pa, PGSIZE,  PTE_R | PTE_W);
+  kvmmap_kpgtbl(p->k_pagetable, p->kstack, p->kstack_pa, PGSIZE, PTE_R | PTE_W);
   return p;
 }
 
 // 释放页表但不释放叶子页表指向的物理页帧
-void proc_free_kernal_pgt(pagetable_t pagetable){
-  for(int i=0; i<512; i++){
+void proc_free_kernal_pgt(pagetable_t pagetable) {
+  for (int i = 0; i < 512; i++) {
     pte_t pte = pagetable[i];
-    if((pte & PTE_V) && (pte & (PTE_R | PTE_W | PTE_X)) == 0){
+    //内核页表的二级页表的页表项是否是与用户态页表指向同一地址空间
+    //那就把二级页表看作是叶子节点咯
+    if((pte & PTE_RSW_LOW) !=0 ){
+      pagetable[i] = 0;
+      continue;
+    }
+    if ((pte & PTE_V) && (pte & (PTE_R | PTE_W | PTE_X)) == 0) { //非第三级页表的页表项，还可以遍历
       uint64 child = PTE2PA(pte);
       proc_free_kernal_pgt((pagetable_t)child);
       pagetable[i] = 0;
-    }
-    else if(pte & PTE_V){
+    } else if (pte & PTE_V) {
       pagetable[i] = 0;
     }
   }
@@ -153,17 +158,19 @@ void proc_free_kernal_pgt(pagetable_t pagetable){
 static void freeproc(struct proc *p) {
   if (p->trapframe) kfree((void *)p->trapframe);
   p->trapframe = 0;
-  //释放用户态页表
+  // 释放用户态页表
   if (p->pagetable) proc_freepagetable(p->pagetable, p->sz);
   p->pagetable = 0;
-  //释放内核态页表
-  //释放内核态页表
-  //对于96个二级页表，释放用户页表时候已经释放
-  pagetable_t pa_2tbl = (pagetable_t)PTE2PA(p->k_pagetable[0]);
-  for(int i=0; i<96; i++){
-    pa_2tbl[i] = 0;
+  // 释放内核态页表
+  pagetable_t pa_2tbl = (pagetable_t)PTE2PA(p->k_pagetable[0]);//等号左边为2级页表
+  //不能多次回收归根原因是因为kfree是链表存储的kmem
+  //利用保留位的低位来标识
+  for (int i = 0; i < 96; i++) {
+    pa_2tbl[i] = PTE_RSW_LOW;//这些二级页表项对应的三级页表在用户态页表回收时已经被回收
   }
-  if(p->k_pagetable) proc_free_kernal_pgt(p->k_pagetable);
+  if (p->k_pagetable) {
+    proc_free_kernal_pgt(p->k_pagetable);
+  }
   p->k_pagetable = 0;
   p->sz = 0;
   p->pid = 0;
@@ -205,6 +212,7 @@ pagetable_t proc_pagetable(struct proc *p) {
 
 // Free a process's page table, and free the
 // physical memory it refers to.
+// 先删除物页框，再删除对应到物理页框的三级页表
 void proc_freepagetable(pagetable_t pagetable, uint64 sz) {
   uvmunmap(pagetable, TRAMPOLINE, 1, 0);
   uvmunmap(pagetable, TRAPFRAME, 1, 0);
@@ -219,16 +227,16 @@ uchar initcode[] = {0x17, 0x05, 0x00, 0x00, 0x13, 0x05, 0x45, 0x02, 0x97, 0x05, 
                     0x69, 0x74, 0x00, 0x00, 0x24, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
 
 // Set up first user process.
-//task2初始化第一个进程的创建
+// task2初始化第一个进程的创建
 void userinit(void) {
   struct proc *p;
 
-  p = allocproc();//请和填写进程的PCB
+  p = allocproc();  // 请和填写进程的PCB
   initproc = p;
 
   // allocate one user page and copy init's instructions
   // and data into it.
-  //uvminit完成用户页表的初始化
+  // uvminit完成用户页表的初始化
   uvminit(p->pagetable, initcode, sizeof(initcode));
   p->sz = PGSIZE;
 
@@ -262,7 +270,7 @@ int growproc(int n) {
   }
   p->sz = sz;
 
-  //更新页表
+  // 更新页表
   sync_pagetable(p->pagetable, p->k_pagetable);
 
   return 0;
@@ -307,8 +315,7 @@ int fork(void) {
 
   np->state = RUNNABLE;
 
-
-  //同步页表
+  // 同步页表
   sync_pagetable(np->pagetable, np->k_pagetable);
 
   release(&np->lock);
@@ -461,8 +468,8 @@ int wait(uint64 addr) {
 //  - swtch to start running that process.
 //  - eventually that process transfers control
 //    via swtch back to the scheduler.
-//进程切换
-//调度器运行在全局内核页表下
+// 进程切换
+// 调度器运行在全局内核页表下
 void scheduler(void) {
   struct proc *p;
   struct cpu *c = mycpu();
@@ -480,13 +487,13 @@ void scheduler(void) {
         // before jumping back to us.
         p->state = RUNNING;
         c->proc = p;
-        //将切换后的页表地址放入satp寄存器中
+        // 将切换后的页表地址放入satp寄存器中
         w_satp(MAKE_SATP(p->k_pagetable));
         sfence_vma();
         swtch(&c->context, &p->context);
         // Process is done running for now.
         // It should have changed its p->state before coming back.
-        //换成全局页表
+        // 换成全局页表
         kvminithart();
         c->proc = 0;
         found = 1;
@@ -495,7 +502,7 @@ void scheduler(void) {
     }
 #if !defined(LAB_FS)
     if (found == 0) {
-      //没找到可运行进程时，载入全局内核页表
+      // 没找到可运行进程时，载入全局内核页表
       kvminithart();
       intr_on();
       asm volatile("wfi");

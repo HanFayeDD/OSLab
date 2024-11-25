@@ -418,7 +418,7 @@ int copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len) {
 // Copy len bytes to dst from virtual address srcva in a given page table.
 // Return 0 on success, -1 on error.
 int copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len) {
-  w_sstatus(r_sstatus() | SSTATUS_SIE);
+  w_sstatus(r_sstatus() | SSTATUS_SUM);
   int res = copyin_new(pagetable, dst, srcva, len);
   w_sstatus(r_sstatus() & ~SSTATUS_SUM);
   return res;
@@ -501,7 +501,7 @@ void sync_pagetable(pagetable_t user_tbl, pagetable_t kernel_tbl) {
 
   // 获取二级页表的物理地址
   // 96个2级页表项共享内存地址空间
-  pagetable_t u_pa = (pagetable_t)PTE2PA(user_tbl[0]);  // 等号左边是二级页表地址
+  pagetable_t u_pa = (pagetable_t)PTE2PA(user_tbl[0]);  
   pagetable_t k_pa = (pagetable_t)PTE2PA(kernel_tbl[0]);
   for (int i = 0; i < 96; i++) {
     k_pa[i] = u_pa[i];
